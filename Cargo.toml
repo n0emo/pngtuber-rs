@@ -1,0 +1,8 @@
+[package]
+name = "pngtuber-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cpal = "0.15.3"
+raylib = "5.0.2"
