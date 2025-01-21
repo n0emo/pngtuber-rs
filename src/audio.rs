@@ -1,8 +1,11 @@
 use std::sync::{Arc, RwLock};
 
-use cpal::{traits::{DeviceTrait as _, HostTrait as _}, Stream};
+use cpal::{
+    traits::{DeviceTrait as _, HostTrait as _},
+    Stream,
+};
 
-const GAIN_MINUS_INFINITY: f32 =  0.00001;
+const GAIN_MINUS_INFINITY: f32 = 0.00001;
 
 pub struct AudioBuffer {
     samples: [f32; 4096],
@@ -28,9 +31,7 @@ impl AudioBuffer {
     }
 
     pub fn rms(&self) -> f32 {
-        let s: f32 = self.samples.iter()
-            .map(|v| v * v)
-            .sum();
+        let s: f32 = self.samples.iter().map(|v| v * v).sum();
 
         (s / self.samples.len() as f32).sqrt()
     }
@@ -42,20 +43,25 @@ pub fn create_stream() -> (Stream, Arc<RwLock<AudioBuffer>>) {
 
     let host = cpal::default_host();
     let device = host.default_input_device().unwrap();
+    for c in host.input_devices().unwrap() {
+        println!("{}", c.name().unwrap());
+    }
     let config = device.default_input_config().unwrap();
-    let stream = device.build_input_stream(
-        &config.config(),
-        move |d: &[f32], _i| {
-            let mut b = buf_s.write().unwrap();
-            for v in d {
-                b.push(*v);
-            }
-        },
-        |e| {
-            eprintln!("Error occured in the input stream: {e}");
-        },
-        None
-    ).unwrap();
+    let stream = device
+        .build_input_stream(
+            &config.config(),
+            move |d: &[f32], _i| {
+                let mut b = buf_s.write().unwrap();
+                for v in d {
+                    b.push(*v);
+                }
+            },
+            |e| {
+                eprintln!("Error occured in the input stream: {e}");
+            },
+            None,
+        )
+        .unwrap();
 
     (stream, buf)
 }
