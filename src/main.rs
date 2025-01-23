@@ -1,7 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use audio::{gain_to_db, AudioError, AudioInterface};
 use eframe::CreationContext;
 use egui::{
-    include_image, Color32, ComboBox, FontId, Frame, Image, Pos2, Rect, RichText, Vec2,
+    include_image, Color32, ComboBox, FontId, Frame, Image, Pos2, Rect, RichText, Ui, Vec2,
     ViewportCommand, ViewportInfo, WindowLevel,
 };
 use ui::AudioUiExt as _;
@@ -45,6 +47,7 @@ struct Application {
     view: View,
     error_message: Option<String>,
     top_padding: f32,
+    second_window: Arc<Mutex<bool>>,
 }
 
 impl Application {
@@ -71,12 +74,14 @@ impl Application {
             error_message: None,
             view: View::Main,
             top_padding: 0.0,
+            second_window: Arc::default(),
         })
     }
 }
 
 impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let avatar_viewport_id = egui::ViewportId::from_hash_of("Avatar window");
         let mut dt = 0.0;
         ctx.input(|i| {
             dt = i.stable_dt;
@@ -86,6 +91,10 @@ impl eframe::App for Application {
                     View::Overlay => View::Main,
                     _ => View::Overlay,
                 }
+            }
+
+            if i.key_pressed(egui::Key::F1) {
+                *self.second_window.lock().unwrap() = true;
             }
 
             if self.top_padding == 0.0 {
@@ -119,18 +128,49 @@ impl eframe::App for Application {
         let mouth_open = Image::new(include_image!("../static/open_mouth.png"));
         let mouth_closed = Image::new(include_image!("../static/close_mouth.png"));
 
+        let second_window = self.second_window.clone();
+        if *self.second_window.lock().unwrap() {
+            let builder = egui::ViewportBuilder::default().with_transparent(true);
+            ctx.show_viewport_deferred(avatar_viewport_id, builder, move |ctx, _class| {
+                egui::CentralPanel::default()
+                    .frame(
+                        Frame::default()
+                            .fill(Color32::TRANSPARENT)
+                            .shadow(egui::Shadow::NONE),
+                    )
+                    .show(ctx, |ui| {
+                        ctx.input(|i| {
+                            if i.viewport().close_requested() {
+                                *second_window.lock().unwrap() = false;
+                            }
+                        });
+
+                        ui.with_layout(
+                            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                            |ui| {
+                                ui.add(
+                                    Image::new(include_image!("../static/open_mouth.png"))
+                                        .fit_to_fraction(Vec2::splat(1.0)),
+                                );
+                            },
+                        )
+                    });
+            });
+        }
+
         egui::CentralPanel::default()
             .frame(
                 Frame::default()
-                    .fill(Color32::TRANSPARENT)
-                    .inner_margin(match overlay {
+                    .fill(Color32::from_rgb(30, 30, 30))
+                    .outer_margin(match overlay {
                         true => egui::Margin {
                             top: self.top_padding,
                             left: 1.0,
                             ..Default::default()
                         },
                         false => egui::Margin::default(),
-                    }),
+                    })
+                    .inner_margin(egui::Margin::same(15.0)),
             )
             .show(ctx, |ui| {
                 let draw_image = |ui| {
@@ -148,27 +188,53 @@ impl eframe::App for Application {
                     image.paint_at(ui, Rect::from_min_size(pos, size));
                 };
 
+                fn top_panel(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
+                    ui.horizontal(|ui| {
+                        content(ui);
+                    });
+                    ui.add_space(10.0);
+                }
+
                 match self.view {
                     View::Main => {
                         draw_image(ui);
 
-                        if ui.button("S").clicked() {
-                            self.view = View::Settings;
-                        }
+                        top_panel(ui, |ui| {
+                            if ui.button("Settings").clicked() {
+                                self.view = View::Settings;
+                            }
+                        });
 
-                        ui.volume_meter(Vec2::new(50.0, 300.0), self.audio.rms());
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.set_max_width(100.0);
+                            ui.with_layout(
+                                egui::Layout::top_down_justified(egui::Align::Center)
+                                    .with_main_justify(true),
+                                |ui| {
+                                    egui::containers::frame::Frame::none()
+                                        .fill(Color32::RED)
+                                        .show(ui, |ui| {
+                                            ui.volume_meter(
+                                                Vec2::new(50.0, 300.0),
+                                                self.audio.rms(),
+                                            );
+                                        });
 
-                        ui.label(format!(
-                            "Talking: {}, time: {}",
-                            self.talking, self.time_release
-                        ));
+                                    ui.label(format!(
+                                        "Talking: {}, time: {}",
+                                        self.talking, self.time_release
+                                    ));
+                                },
+                            );
+                        });
                     }
                     View::Overlay => draw_image(ui),
-                    View::Settings => 'settings: {
-                        if ui.button("b").clicked() {
-                            self.view = View::Main;
-                            break 'settings;
-                        }
+                    View::Settings => {
+                        top_panel(ui, |ui| {
+                            if ui.button("Back").clicked() {
+                                self.view = View::Main;
+                            }
+                        });
 
                         let mut current = self.current_device;
                         ComboBox::from_label("Select audio source")
@@ -214,10 +280,7 @@ impl eframe::App for Application {
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        match self.view {
-            View::Overlay => [0.0, 0.0, 0.0, 0.0],
-            _ => Color32::from_rgba_unmultiplied(12, 12, 12, 50).to_normalized_gamma_f32(),
-        }
+        [0.0, 0.0, 0.0, 0.0]
     }
 }
 

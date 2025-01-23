@@ -16,7 +16,7 @@ impl AudioUiExt for Ui {
             .show(self, |ui| {
                 ui.set_min_size(size);
                 let painter = ui.painter();
-                let pos = ui.cursor().min;
+                let pos = ui.min_rect().min;
 
                 let h = size.y * value;
                 painter.rect_filled(
@@ -25,7 +25,5 @@ impl AudioUiExt for Ui {
                     Color32::GREEN,
                 );
             });
-
     }
 }
-
